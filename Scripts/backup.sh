@@ -3,8 +3,8 @@
 # ==========================================
 # CONFIGURATION VARIABLES
 # ==========================================
-DB_TYPE="mysql"               # Database type: "mysql" or "postgres"
-DB_CONTAINER="drupal-db"      # Name of the database container
+DB_TYPE="postgres"             # Database type: "mysql" or "postgres"
+DB_CONTAINER="postgres-db"     # Name of the database container
 DRUPAL_CONTAINER="drupal-web" # Name of the Drupal container
 DB_NAME="drupal_db"           # Name of the database
 DB_ROOT_PASSWORD="my-secret-pw" # Root password (Must be my-secret-pw)

@@ -3,15 +3,15 @@
 # ==========================================
 # CONFIGURATION VARIABLES
 # ==========================================
-DB_TYPE="mysql"               # Database type: "mysql" or "postgres"
-DB_CONTAINER="drupal-db"      # Name of the database container
+DB_TYPE="postgres"             # Database type: "mysql" or "postgres"
+DB_CONTAINER="postgres-db"     # Name of the database container
 DRUPAL_CONTAINER="drupal-web" # Name of the Drupal container
 NETWORK_NAME="drupal-net"     # Name of the Docker network
-DB_PORT="3306"                # Port exposed on host (3306 for MySQL, 5432 for Postgres)
+DB_PORT="5432"                # Port exposed on host (3306 for MySQL, 5432 for Postgres)
 DRUPAL_PORT="8080"            # Port exposed on host for Drupal (Must be 8080)
 DB_NAME="drupal_db"           # Name of the database
-DB_USER="drupal"              # Database username
-DB_PASSWORD="drupal_password" # Database user password
+DB_USER="drupal_user"          # Database username
+DB_PASSWORD="my-secret-pw"     # Database user password
 DB_ROOT_PASSWORD="my-secret-pw" # Root password (Must be my-secret-pw)
 
 # Volumes

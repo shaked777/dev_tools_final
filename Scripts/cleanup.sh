@@ -3,8 +3,8 @@
 # ==========================================
 # CONFIGURATION VARIABLES
 # ==========================================
-DB_TYPE="mysql"               # Database type: "mysql" or "postgres"
-DB_CONTAINER="drupal-db"      # Name of the database container
+DB_TYPE="postgres"             # Database type: "mysql" or "postgres"
+DB_CONTAINER="postgres-db"     # Name of the database container
 DRUPAL_CONTAINER="drupal-web" # Name of the Drupal container
 NETWORK_NAME="drupal-net"     # Name of the Docker network
 DB_VOLUME="drupal-db-data"    # Name of the DB volume
@@ -63,10 +63,10 @@ for img in "drupal:latest" "$DB_IMAGE"; do
     fi
 done
 
-# 5. Remove generated backup files
-echo "[*] Removing backup files..."
-rm -f my-drupal.backup.sql.gz drupal_db_backup.sql drupal_files_backup.tar.gz
-echo "[+] Backup files deleted."
+# 5. Remove generated backup files (excluding the repository's database dump)
+echo "[*] Removing temporary backup files..."
+rm -f my-drupal.backup.sql.gz drupal_files_backup.tar.gz
+echo "[+] Temporary backup files deleted."
 
 echo "=================================================="
 echo " Cleanup completed!"

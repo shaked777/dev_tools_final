@@ -3,12 +3,12 @@
 # ==========================================
 # CONFIGURATION VARIABLES
 # ==========================================
-DB_TYPE="mysql"               # Database type: "mysql" or "postgres"
-DB_CONTAINER="drupal-db"      # Name of the database container
+DB_TYPE="postgres"             # Database type: "mysql" or "postgres"
+DB_CONTAINER="postgres-db"     # Name of the database container
 DRUPAL_CONTAINER="drupal-web" # Name of the Drupal container
 DB_NAME="drupal_db"           # Name of the database
-DB_USER="drupal"              # Database username
-DB_PASSWORD="drupal_password" # Database user password
+DB_USER="drupal_user"          # Database username
+DB_PASSWORD="my-secret-pw"     # Database user password
 DB_ROOT_PASSWORD="my-secret-pw" # Root password
 DRUPAL_VOLUME="drupal-web-data" # Name of the Drupal volume
 
@@ -93,7 +93,13 @@ else
         docker exec "$DB_CONTAINER" sh -c "psql -U root -c 'DROP DATABASE IF EXISTS \"$DB_NAME\";'"
         docker exec "$DB_CONTAINER" sh -c "psql -U root -c 'CREATE DATABASE \"$DB_NAME\";'"
         
+        # Create database user if it doesn't exist and grant privileges
+        echo "[*] Creating database user '$DB_USER'..."
+        docker exec "$DB_CONTAINER" sh -c "psql -U root -c \"CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';\"" >/dev/null 2>&1 || true
+        docker exec "$DB_CONTAINER" sh -c "psql -U root -c \"GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;\""
+        
         # Import data (per PDF instructions)
+        echo "[*] Importing SQL backup..."
         docker exec -i "$DB_CONTAINER" psql -U root "$DB_NAME" < "$BACKUP_FILE"
         
         if [ $? -eq 0 ]; then
@@ -108,7 +114,19 @@ else
     fi
 fi
 
-# 3. Restart Drupal service to apply changes
+# 3. Restore settings.php configuration
+if [ -f "settings.php" ]; then
+    echo "[*] Copying settings.php configuration to Drupal container..."
+    docker exec "$DRUPAL_CONTAINER" mkdir -p /var/www/html/sites/default
+    docker cp settings.php "$DRUPAL_CONTAINER":/var/www/html/sites/default/settings.php
+    docker exec "$DRUPAL_CONTAINER" chown www-data:www-data /var/www/html/sites/default/settings.php
+    docker exec "$DRUPAL_CONTAINER" chmod 644 /var/www/html/sites/default/settings.php
+    echo "[+] settings.php copied and permissions set successfully."
+else
+    echo "[!] Warning: settings.php not found in workspace root!"
+fi
+
+# 4. Restart Drupal service to apply changes
 echo "[*] Restarting Drupal container to apply restored data..."
 docker restart "$DRUPAL_CONTAINER"
 
