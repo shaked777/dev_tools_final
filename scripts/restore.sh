@@ -1,27 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+source "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
 # ==========================================
 # CONFIGURATION VARIABLES
 # ==========================================
-DB_TYPE="postgres"             # Database type: "mysql" or "postgres"
-DB_CONTAINER="postgres-db"     # Name of the database container
-DRUPAL_CONTAINER="drupal-web" # Name of the Drupal container
-DB_NAME="drupal_db"           # Name of the database
-DB_USER="drupal_user"          # Database username
-DB_PASSWORD="my-secret-pw"     # Database user password
-DB_ROOT_PASSWORD="my-secret-pw" # Root password
-DRUPAL_VOLUME="drupal-web-data" # Name of the Drupal volume
+validate_db_type
+validate_identifier DB_NAME "$DB_NAME"
+validate_identifier POSTGRES_SUPERUSER "$POSTGRES_SUPERUSER"
+require_docker
+require_command gunzip
 
 echo "=================================================="
 echo " Starting Drupal and Database Restore"
 echo "=================================================="
 
 # Check if containers are running
-if ! docker ps --format '{{.Names}}' | grep -Eq "^${DB_CONTAINER}$"; then
+if ! container_running "$DB_CONTAINER"; then
     echo "[!] Error: Database container '$DB_CONTAINER' is not running!"
     exit 1
 fi
-if ! docker ps --format '{{.Names}}' | grep -Eq "^${DRUPAL_CONTAINER}$"; then
+if ! container_running "$DRUPAL_CONTAINER"; then
     echo "[!] Error: Drupal container '$DRUPAL_CONTAINER' is not running!"
     exit 1
 fi
@@ -31,27 +30,9 @@ FILES_BACKUP="drupal_files_backup.tar.gz"
 if [ -f "$FILES_BACKUP" ]; then
     echo "[*] Restoring Drupal files volume ($DRUPAL_VOLUME) from $FILES_BACKUP..."
     
-    # We clear the container directory first to ensure a clean restore,
-    # then pipe the compressed archive directly into docker cp.
-    docker exec "$DRUPAL_CONTAINER" sh -c "rm -rf /var/www/html/*" && \
+    docker exec "$DRUPAL_CONTAINER" find /var/www/html -mindepth 1 -maxdepth 1 -exec rm -rf '{}' +
     gunzip < "$FILES_BACKUP" | docker cp - "$DRUPAL_CONTAINER":/var/www/html/
-        
-    if [ $? -eq 0 ]; then
-        echo "[+] Volume restore completed successfully."
-    else
-        echo "[!] Warning: Direct docker cp restore failed. Trying helper container fallback..."
-        docker run --rm \
-            -v "$DRUPAL_VOLUME:/volume_data" \
-            -v "$(pwd):/backup_dir" \
-            alpine sh -c "rm -rf /volume_data/* && tar -xzf /backup_dir/$FILES_BACKUP -C /volume_data"
-            
-        if [ $? -eq 0 ]; then
-            echo "[+] Helper container volume restore completed successfully."
-        else
-            echo "[!] Error: Volume restore failed!"
-            exit 1
-        fi
-    fi
+    echo "[+] Volume restore completed successfully."
 else
     echo "[!] Warning: Volume backup file '$FILES_BACKUP' not found! Skipping files restore."
 fi
@@ -65,19 +46,14 @@ if [ "$DB_TYPE" = "mysql" ]; then
         # 2a. Recreate database (per PDF instructions)
         echo "[*] Recreating database '$DB_NAME'..."
         # First drop if exists to ensure clean restore, then create
-        docker exec "$DB_CONTAINER" sh -c "exec mysqladmin -uroot -p'$DB_ROOT_PASSWORD' -f drop $DB_NAME" >/dev/null 2>&1
-        docker exec "$DB_CONTAINER" sh -c "exec mysqladmin -uroot -p'$DB_ROOT_PASSWORD' create $DB_NAME"
+        docker exec "$DB_CONTAINER" mysqladmin -uroot "-p$DB_ROOT_PASSWORD" -f drop "$DB_NAME" >/dev/null 2>&1 || true
+        docker exec "$DB_CONTAINER" mysqladmin -uroot "-p$DB_ROOT_PASSWORD" create "$DB_NAME"
         
         # 2b. Import database (per PDF instructions)
         echo "[*] Importing SQL backup..."
-        gunzip < "$BACKUP_FILE" | docker exec -i "$DB_CONTAINER" sh -c "exec mysql -h 127.0.0.1 -u$DB_USER -p$DB_PASSWORD --force $DB_NAME"
-        
-        if [ $? -eq 0 ]; then
-            echo "[+] MySQL database restore completed successfully."
-        else
-            echo "[!] Error: MySQL database restore failed!"
-            exit 1
-        fi
+        gunzip < "$BACKUP_FILE" |
+            docker exec -i "$DB_CONTAINER" mysql -h 127.0.0.1 "-u$DB_USER" "-p$DB_PASSWORD" "$DB_NAME"
+        echo "[+] MySQL database restore completed successfully."
     else
         echo "[!] Error: Database backup file '$BACKUP_FILE' not found!"
         exit 1
@@ -90,24 +66,27 @@ else
         
         # Recreate database to ensure clean restore
         echo "[*] Recreating database '$DB_NAME'..."
-        docker exec "$DB_CONTAINER" sh -c "psql -U root -c 'DROP DATABASE IF EXISTS \"$DB_NAME\";'"
-        docker exec "$DB_CONTAINER" sh -c "psql -U root -c 'CREATE DATABASE \"$DB_NAME\";'"
-        
-        # Create database user if it doesn't exist and grant privileges
+        docker exec "$DB_CONTAINER" psql \
+            -v ON_ERROR_STOP=1 \
+            -U "$POSTGRES_SUPERUSER" \
+            -d postgres \
+            -c "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" \
+            -c "CREATE DATABASE \"$DB_NAME\";"
+
         echo "[*] Creating database user '$DB_USER'..."
-        docker exec "$DB_CONTAINER" sh -c "psql -U root -c \"CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';\"" >/dev/null 2>&1 || true
-        docker exec "$DB_CONTAINER" sh -c "psql -U root -c \"GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;\""
-        
-        # Import data (per PDF instructions)
+        ensure_postgres_role
+        docker exec "$DB_CONTAINER" psql \
+            -v ON_ERROR_STOP=1 \
+            -U "$POSTGRES_SUPERUSER" \
+            -d postgres \
+            -c "GRANT ALL PRIVILEGES ON DATABASE \"$DB_NAME\" TO \"$DB_USER\";"
+
         echo "[*] Importing SQL backup..."
-        docker exec -i "$DB_CONTAINER" psql -U root "$DB_NAME" < "$BACKUP_FILE"
-        
-        if [ $? -eq 0 ]; then
-            echo "[+] PostgreSQL database restore completed successfully."
-        else
-            echo "[!] Error: PostgreSQL database restore failed!"
-            exit 1
-        fi
+        docker exec -i "$DB_CONTAINER" psql \
+            -v ON_ERROR_STOP=1 \
+            -U "$POSTGRES_SUPERUSER" \
+            -d "$DB_NAME" < "$BACKUP_FILE"
+        echo "[+] PostgreSQL database restore completed successfully."
     else
         echo "[!] Error: Database backup file '$BACKUP_FILE' not found!"
         exit 1
@@ -132,5 +111,5 @@ docker restart "$DRUPAL_CONTAINER"
 
 echo "=================================================="
 echo " Restore completed successfully!"
-echo " Feel free to open http://localhost:8080"
+echo " Feel free to open http://localhost:$DRUPAL_PORT"
 echo "=================================================="
