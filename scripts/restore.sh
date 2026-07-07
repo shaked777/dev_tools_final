@@ -81,6 +81,13 @@ else
             -d postgres \
             -c "GRANT ALL PRIVILEGES ON DATABASE \"$DB_NAME\" TO \"$DB_USER\";"
 
+        # Grant public schema privileges to the app user (required for PG 15+)
+        docker exec "$DB_CONTAINER" psql \
+            -v ON_ERROR_STOP=1 \
+            -U "$POSTGRES_SUPERUSER" \
+            -d "$DB_NAME" \
+            -c "GRANT ALL ON SCHEMA public TO \"$DB_USER\";"
+
         echo "[*] Importing SQL backup..."
         docker exec -i "$DB_CONTAINER" psql \
             -v ON_ERROR_STOP=1 \
