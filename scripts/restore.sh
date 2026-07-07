@@ -94,6 +94,21 @@ else
             -U "$POSTGRES_SUPERUSER" \
             -d "$DB_NAME" < "$BACKUP_FILE"
         echo "[+] PostgreSQL database restore completed successfully."
+
+        # Clear Drupal cache tables to prevent version/stale registry issues (like resolvable_uri)
+        echo "[*] Clearing Drupal cache tables..."
+        docker exec "$DB_CONTAINER" psql \
+            -v ON_ERROR_STOP=1 \
+            -U "$POSTGRES_SUPERUSER" \
+            -d "$DB_NAME" \
+            -c "DO \$\$ 
+                DECLARE 
+                    r RECORD;
+                BEGIN
+                    FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'cache_%') LOOP
+                        EXECUTE 'TRUNCATE TABLE public.' || quote_ident(r.tablename) || ' CASCADE';
+                    END LOOP;
+                END \$\$;"
     else
         echo "[!] Error: Database backup file '$BACKUP_FILE' not found!"
         exit 1
