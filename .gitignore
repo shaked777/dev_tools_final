@@ -1,4 +1,3 @@
 .DS_Store
-drupal_files_backup.tar.gz
-my-drupal.backup.sql.gz
 *.tmp
+diagnostic.log
